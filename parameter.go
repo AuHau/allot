@@ -1,18 +1,23 @@
 package allot
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
 
-var regexpMapping = map[string]string{
-	"string":  "[^\\s]+",
-	"integer": "[0-9]+",
+func MakeBasicTypes() Types {
+	return map[string]string{
+		"string":  "[^\\s]+",
+		"integer": "[0-9]+",
+	}
 }
 
+const defaultType = "string"
+
 // Expression returns the regexp for a data type
-func Expression(data string) *regexp.Regexp {
-	if exp, ok := regexpMapping[data]; ok {
+func Expression(data string, types Types) *regexp.Regexp {
+	if exp, ok := types[data]; ok {
 		return regexp.MustCompile(exp)
 	}
 
@@ -55,25 +60,34 @@ func (p Parameter) Equals(param ParameterInterface) bool {
 }
 
 // NewParameterWithType returns
-func NewParameterWithType(name string, data string) Parameter {
-	return Parameter{name, data, Expression(data)}
+func NewParameterWithType(name string, data string, regex* regexp.Regexp) Parameter {
+	return Parameter{name, data, regex}
 }
 
 // Parse parses parameter info
-func Parse(text string) Parameter {
+func Parse(text string, types Types) (Parameter, error) {
 	var splits []string
 	var name, data string
+	var param Parameter
 
 	name = strings.Replace(text, "<", "", -1)
 	name = strings.Replace(name, ">", "", -1)
-	data = "string"
+	data = defaultType
 
 	if strings.Contains(name, ":") {
 		splits = strings.Split(name, ":")
 
 		name = splits[0]
 		data = splits[1]
+
+		_, exists := types[data]
+		if !exists {
+			return param, fmt.Errorf("data types '%s' is not defined", data)
+		}
 	}
 
-	return NewParameterWithType(name, data)
+	regex := Expression(data, types)
+	param = NewParameterWithType(name, data, regex)
+
+	return param, nil
 }

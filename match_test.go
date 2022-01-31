@@ -16,15 +16,13 @@ func TestMatch(t *testing.T) {
 	}
 
 	for _, set := range data {
-		match, err := New(set.command).Match(set.request)
+		cmd, err := New(set.command, nil)
+		checkErr(err, t)
+
+		match, err := cmd.Match(set.request)
 
 		if err != nil {
-			expr, err := New(set.command).Expression()
-			if err != nil {
-				t.Error(err)
-			}
-
-			t.Errorf("Request [%s] does not match Command [%s]\n => %s", set.request, set.command, expr.String())
+			t.Errorf("Request [%s] does not match Command [%s]\n => %s", set.request, set.command, cmd.Expression().String())
 		}
 
 		value, err := match.Match(set.position)
@@ -39,7 +37,7 @@ func TestMatch(t *testing.T) {
 	}
 }
 
-func TestMatchAndIteger(t *testing.T) {
+func TestMatchAndInteger(t *testing.T) {
 	var data = []struct {
 		command   string
 		request   string
@@ -51,15 +49,13 @@ func TestMatchAndIteger(t *testing.T) {
 	}
 
 	for _, set := range data {
-		match, err := New(set.command).Match(set.request)
+		cmd, err := New(set.command, nil)
+		checkErr(err, t)
+
+		match, err := cmd.Match(set.request)
 
 		if err != nil {
-			expr, err := New(set.command).Expression()
-			if err != nil {
-				t.Error(err)
-			}
-
-			t.Errorf("Request [%s] does not match Command [%s]\n => %s", set.request, set.command, expr.String())
+			t.Errorf("Request [%s] does not match Command [%s]\n => %s", set.request, set.command, cmd.Expression().String())
 		}
 
 		value, err := match.Integer(set.parameter)
@@ -96,7 +92,10 @@ func TestMatchAndString(t *testing.T) {
 	}
 
 	for _, set := range data {
-		match, err := New(set.command).Match(set.request)
+		cmd, err := New(set.command, nil)
+		checkErr(err, t)
+
+		match, err := cmd.Match(set.request)
 
 		if err != nil {
 			t.Errorf("Request [%s] does not match Command [%s]", set.request, set.command)

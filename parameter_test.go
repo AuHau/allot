@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+var basicTypes = MakeBasicTypes()
+
 func TestExpression(t *testing.T) {
 	var data = []struct {
 		data       string
@@ -22,7 +24,7 @@ func TestExpression(t *testing.T) {
 			t.Errorf("TextExpression regexp does not compile: %s", set.expression)
 		}
 
-		test := Expression(set.data)
+		test := Expression(set.data, basicTypes)
 
 		if test == nil && set.expression != "" {
 			t.Errorf("Expression for data \"%s\" is not valid", set.data)
@@ -31,28 +33,6 @@ func TestExpression(t *testing.T) {
 		if test != nil && test.String() != exp.String() {
 			t.Errorf("Expression() not matching test data! got \"%s\", expected \"%s\"", test.String(), exp.String())
 		}
-	}
-}
-
-func TestParameterExpression(t *testing.T) {
-	var data = []struct {
-		name       string
-		data       string
-		expression string
-	}{
-		{"lorem", "string", "[^\\s]+"},
-		{"ipsum", "integer", "[0-9]+"},
-	}
-
-	for _, set := range data {
-		param := NewParameterWithType(set.name, set.data)
-		exp := regexp.MustCompile(set.expression)
-
-		pExp := param.Expression()
-		if pExp.String() != exp.String() {
-			t.Errorf("Expression() not matching test data! got \"%s\", expected \"%s\"", pExp.String(), exp.String())
-		}
-
 	}
 }
 
@@ -67,30 +47,21 @@ func TestParse(t *testing.T) {
 	}
 
 	var param Parameter
+	var err error
 	for _, set := range data {
-		param = Parse(set.text)
+		param, err = Parse(set.text, basicTypes)
+		if err != nil {
+			t.Errorf("Parse returned err: %s", err)
+		}
 
 		if param.Name() != set.name {
 			t.Errorf("param.Name() should be \"%s\", but is \"%s\"", set.name, param.Name())
 		}
 	}
-}
 
-func TestParameter(t *testing.T) {
-	var data = []struct {
-		name string
-		data string
-	}{
-		{"lorem", "string"},
-		{"ipsum", "integer"},
-	}
-
-	var param Parameter
-	for _, set := range data {
-		param = NewParameterWithType(set.name, set.data)
-
-		if param.Name() != set.name {
-			t.Errorf("param.Name() should be \"%s\", but is \"%s\"", set.name, param.Name())
-		}
+	_, err = Parse("<some:nonexistingtype>", basicTypes)
+	if err == nil {
+		t.Error("Parse should return error for non-existing types")
 	}
 }
+
