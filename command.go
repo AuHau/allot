@@ -9,19 +9,23 @@ import (
 
 // CommandInterface describes how to access a Command
 type CommandInterface interface {
-	Expression() (*regexp.Regexp, error)
-	Has(name ParameterInterface) (bool, error)
+	Expression() *regexp.Regexp
+	Has(name string) bool
 	Match(req string) (MatchInterface, error)
-	Matches(req string) (bool, error)
-	Parameters() ([]Parameter, error)
-	Position(param ParameterInterface) (int, error)
+	Matches(req string) bool
+	Parameters() []Parameter
+	Position(name string) int
 	Text() string
 }
+
+type Types = map[string]string
 
 // Command is a Command definition
 type Command struct {
 	text   string
 	escape bool
+	params []Parameter
+	expression *regexp.Regexp
 }
 
 // Text returns the command text
@@ -30,21 +34,63 @@ func (c Command) Text() string {
 }
 
 // Expression returns the regular expression matching the command text
-func (c Command) Expression() (*regexp.Regexp, error) {
+func (c Command) Expression() *regexp.Regexp {
+	return c.expression
+}
+
+// Parameters returns the list of defined parameters
+func (c Command) Parameters() []Parameter {
+	return c.params
+}
+
+// Has checks if the parameter is found in the command
+func (c Command) Has(name string) bool {
+	pos := c.Position(name)
+
+	return pos != -1
+}
+
+// Position returns the position of a parameter
+func (c Command) Position(name string) int {
+	params := c.Parameters()
+
+	for index, item := range params {
+		if item.name == name {
+			return index
+		}
+	}
+
+	return -1
+}
+
+// Match returns the parameter matching the expression at the defined position
+func (c Command) Match(req string) (MatchInterface, error) {
+	result := c.Matches(req)
+
+	if result {
+		return Match{c, req}, nil
+	}
+
+	return nil, errors.New("Request does not match Command.")
+}
+
+// Matches checks if a command definition matches a request
+func (c Command) Matches(req string) bool {
+	expr:= c.Expression()
+
+	return expr.MatchString(req)
+}
+
+func makeExpression(commandString string, params []Parameter, escape bool) (*regexp.Regexp, error) {
 	var expr string
 
-	if c.escape {
-		expr = regexp.QuoteMeta(c.Text())
+	if escape {
+		expr = regexp.QuoteMeta(commandString)
 	} else {
-		expr = c.Text()
+		expr = commandString
 	}
 
-	params, err := c.Parameters()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, param := range params  {
+	for _, param := range params {
 		expr = strings.Replace(
 			expr,
 			fmt.Sprintf("<%s:%s>", param.Name(), param.Data()),
@@ -55,7 +101,7 @@ func (c Command) Expression() (*regexp.Regexp, error) {
 		expr = strings.Replace(
 			expr,
 			fmt.Sprintf("<%s>", param.Name()),
-			"("+param.Expression().String()+")",
+			fmt.Sprintf("(%s)", param.Expression().String()),
 			-1,
 		)
 	}
@@ -68,88 +114,63 @@ func (c Command) Expression() (*regexp.Regexp, error) {
 	return regex, nil
 }
 
-// Parameters returns the list of defined parameters
-func (c Command) Parameters() ([]Parameter, error) {
+func parseParameters(command string, types Types) ([]Parameter, error) {
 	var list []Parameter
+	namesSet := make(map[string]struct{})
+
 	re, err := regexp.Compile("<(.*?)>")
 	if err != nil {
 		return nil, err
 	}
 
-	result := re.FindAllStringSubmatch(c.Text(), -1)
+	result := re.FindAllStringSubmatch(command, -1)
 
 	for _, p := range result {
 		if len(p) != 2 {
 			continue
 		}
 
-		pType := ""
-		if !strings.Contains(p[1], ":") {
-			pType = ":string"
+		param, err := Parse(p[1], types)
+		if err != nil {
+			return nil, err
 		}
 
-		list = append(list, Parse(p[1]+pType))
+		if _, exist := namesSet[param.name]; exist {
+			return nil, fmt.Errorf("the parameter with name '%s' is present multiple times", param.name)
+		}
+
+		namesSet[param.name] = struct{}{}
+		list = append(list, param)
 	}
 
 	return list, nil
 }
 
-// Has checks if the parameter is found in the command
-func (c Command) Has(param ParameterInterface) (bool, error) {
-	pos, err := c.Position(param)
+func makeCommand(commandString string, escaping bool, types Types) (Command, error) {
+	if types == nil {
+		types = MakeBasicTypes()
+	}
+
+	var command Command
+	params, err := parseParameters(commandString, types)
 	if err != nil {
-		return false, err
+		return command, err
 	}
 
-	return pos != -1, nil
-}
-
-// Position returns the position of a parameter
-func (c Command) Position(param ParameterInterface) (int, error) {
-	params, err := c.Parameters()
+	expr, err := makeExpression(commandString, params, escaping)
 	if err != nil {
-		return -1, err
+		return command, err
 	}
 
-	for index, item := range params {
-		if item.Equals(param) {
-			return index, nil
-		}
-	}
-
-	return -1, nil
-}
-
-// Match returns the parameter matching the expression at the defined position
-func (c Command) Match(req string) (MatchInterface, error) {
-	result, err := c.Matches(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if result {
-		return Match{c, req}, nil
-	}
-
-	return nil, errors.New("Request does not match Command.")
-}
-
-// Matches checks if a command definition matches a request
-func (c Command) Matches(req string) (bool, error) {
-	expr, err := c.Expression()
-	if err != nil {
-		return false, err
-	}
-
-	return expr.MatchString(req), nil
+	return Command{commandString, escaping, params,expr }, nil
 }
 
 // New returns a new command
-func New(command string) Command {
-	return Command{command, false}
+func New(command string, types Types) (Command, error) {
+	return makeCommand(command, false, types)
 }
 
 // NewWithEscaping returns a new command that escapes regex characters
-func NewWithEscaping(command string) Command {
-	return Command{command, true}
+func NewWithEscaping(command string, types Types) (Command, error) {
+	return makeCommand(command, true, types)
 }

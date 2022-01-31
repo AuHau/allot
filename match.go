@@ -12,7 +12,7 @@ type MatchInterface interface {
 	Integer(name string) (int, error)
 	Match(position int) (string, error)
 
-	Parameter(param ParameterInterface) (string, error)
+	Parameter(paramName string) (string, error)
 }
 
 // Match is the Match definition
@@ -21,14 +21,14 @@ type Match struct {
 	Request string
 }
 
-// String returns the value for a string parameter
+// String returns the value as string
 func (m Match) String(name string) (string, error) {
-	return m.Parameter(NewParameterWithType(name, "string"))
+	return m.Parameter(name)
 }
 
-// Integer returns the value for an integer parameter
+// Integer returns the value as integer
 func (m Match) Integer(name string) (int, error) {
-	str, err := m.Parameter(NewParameterWithType(name, "integer"))
+	str, err := m.Parameter(name)
 	if err != nil {
 		return 0, err
 	}
@@ -37,21 +37,14 @@ func (m Match) Integer(name string) (int, error) {
 }
 
 // Parameter returns the value for a parameter
-func (m Match) Parameter(param ParameterInterface) (string, error) {
-	pos, err := m.Command.Position(param)
-	if err != nil {
-		return "", err
-	}
+func (m Match) Parameter(name string) (string, error) {
+	pos := m.Command.Position(name)
 
 	if pos == -1 {
-		return "", errors.New("Unknonw parameter \"" + param.Name() + "\"")
+		return "", fmt.Errorf("Unknown parameter '%s'", name)
 	}
 
-	expr, err := m.Command.Expression()
-	if err != nil {
-		return "", err
-	}
-
+	expr := m.Command.Expression()
 	matches := expr.FindAllStringSubmatch(m.Request, -1)[0][1:]
 
 	return matches[pos], nil
@@ -59,11 +52,7 @@ func (m Match) Parameter(param ParameterInterface) (string, error) {
 
 // Match returns the match at given position
 func (m Match) Match(position int) (string, error) {
-	expr, err := m.Command.Expression()
-	if err != nil {
-		return "", err
-	}
-
+	expr := m.Command.Expression()
 	matches := expr.FindAllStringSubmatch(m.Request, -1)
 
 	if len(matches) != 1 {

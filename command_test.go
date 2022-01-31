@@ -6,18 +6,22 @@ import (
 
 var resultCommand bool
 
+func checkErr(err error, t *testing.T) {
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func BenchmarkMatches(b *testing.B) {
 	var r bool
 
 	for n := 0; n < b.N; n++ {
-		cmd := New("command <lorem:integer> <ipsum:string>")
-		result, err := cmd.Matches("command 12345 abcdef")
+		cmd, err := New("command <lorem:integer> <ipsum:string>", nil)
 		if err != nil {
 			b.Error(err)
-			return
 		}
 
-		r = result
+		r = cmd.Matches("command 12345 abcdef")
 	}
 
 	resultCommand = r
@@ -43,27 +47,27 @@ func TestMatches(t *testing.T) {
 	}
 
 	for _, set := range data {
-		cmd := New(set.command)
+		cmd, err := New(set.command, nil)
+		checkErr(err, t)
 
-		matches, err := cmd.Matches(set.request)
-		if err != nil {
-			t.Error(err)
-		}
+		matches := cmd.Matches(set.request)
 
 		if matches != set.matches {
-			expr, err := cmd.Expression()
-			if err != nil {
-				t.Error(err)
-			}
-
-			t.Errorf("Matches() returns unexpected values. Got \"%v\", expected \"%v\"\nExpression: \"%s\" not matching \"%s\"", matches, set.matches, expr.String(), set.request)
+			t.Errorf("Matches() returns unexpected values. Got \"%v\", expected \"%v\"\nExpression: \"%s\" not matching \"%s\"", matches, set.matches, cmd.Expression().String(), set.request)
 		}
 	}
 }
 
 func TestNotCompiling(t *testing.T) {
-	cmd := New("command with []() invalid regex syntax")
-	_, err := cmd.Matches("what ever")
+	_, err := New("command with []() invalid regex syntax", nil)
+
+	if err == nil {
+		t.Error("Compilation of regex should have had failed")
+	}
+}
+
+func TestDuplicatedNames(t *testing.T) {
+	_, err := New("command with <name:string> duplicated <name:string>", nil)
 
 	if err == nil {
 		t.Error("Compilation of regex should have had failed")
@@ -86,21 +90,13 @@ func TestEscapeMatches(t *testing.T) {
 	}
 
 	for _, set := range data {
-		cmd := NewWithEscaping(set.command)
+		cmd, err := NewWithEscaping(set.command, nil)
+		checkErr(err, t)
 
-		matches, err := cmd.Matches(set.request)
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		matches := cmd.Matches(set.request)
 
 		if matches != set.matches {
-			expr, err := cmd.Expression()
-			if err != nil {
-				t.Error(err)
-			}
-
-			t.Errorf("Matches() returns unexpected values. Got \"%v\", expected \"%v\"\nExpression: \"%s\" not matching \"%s\"", matches, set.matches, expr.String(), set.request)
+			t.Errorf("Matches() returns unexpected values. Got \"%v\", expected \"%v\"\nExpression: \"%s\" not matching \"%s\"", matches, set.matches, cmd.Expression().String(), set.request)
 		}
 	}
 }
@@ -108,26 +104,23 @@ func TestEscapeMatches(t *testing.T) {
 func TestPosition(t *testing.T) {
 	var data = []struct {
 		command  string
-		param    Parameter
+		param    string
 		position int
 	}{
-		{"command <lorem>", NewParameterWithType("lorem", "string"), 0},
-		{"command <lorem> <ipsum> <dolor> <sit> <amet>", NewParameterWithType("dolor", "string"), 2},
-		{"command <lorem> <ipsum> <dolor:integer> <sit> <amet>", NewParameterWithType("dolor", "string"), -1},
-		{"command <lorem:integer> <ipsum> <dolor:integer> <sit> <amet>", NewParameterWithType("lorem", "string"), -1},
-		{"command <lorem:integer> <ipsum> <dolor:integer> <sit> <amet>", NewParameterWithType("lorem", "integer"), 0},
-		{"command <lorem:integer> <ipsum> <lorem:string> <sit> <amet>", NewParameterWithType("lorem", "integer"), 0},
-		{"command <lorem:integer> <ipsum> <lorem:string> <sit> <amet>", NewParameterWithType("lorem", "string"), 2},
+		{"command <lorem>", "lorem", 0},
+		{"command <lorem> <ipsum> <dolor> <sit> <amet>", "dolor", 2},
+		{"command <lorem> <ipsum> <dolor:integer> <sit> <amet>", "dolor", 2},
+		{"command <lorem:integer> <ipsum> <dolor:integer> <sit> <amet>", "lorem", 0},
+		{"command <lorem:string> <ipsum> <sit> <amet>", "lorem", 0},
 	}
 
 	var cmd Command
+	var err error
 	for _, set := range data {
-		cmd = New(set.command)
-
-		pos, err := cmd.Position(set.param)
-		if err != nil {
-			t.Error(err)
-		}
+		cmd, err = New(set.command, nil)
+		checkErr(err, t)
+		
+		pos := cmd.Position(set.param)
 
 		if pos != set.position {
 			t.Errorf("Position() should be \"%d\", but is \"%d\"", set.position, pos)
@@ -138,20 +131,20 @@ func TestPosition(t *testing.T) {
 func TestHas(t *testing.T) {
 	var data = []struct {
 		command   string
-		parameter Parameter
+		parameter string
 		has       bool
 	}{
-		{"command <lorem>", NewParameterWithType("lorem", "string"), true},
-		{"command <lorem>", NewParameterWithType("lorem", "integer"), false},
+		{"command <lorem>", "lorem", true},
+		{"command <lorem>", "dorem", false},
 	}
 
 	var cmd CommandInterface
+	var err error
 	for _, set := range data {
-		cmd = New(set.command)
-		has, err := cmd.Has(set.parameter)
-		if err != nil {
-			t.Error(err)
-		}
+		cmd, err = New(set.command, nil)
+		checkErr(err, t)
+
+		has := cmd.Has(set.parameter)
 
 		if has != set.has {
 			t.Errorf("HasParameter is \"%v\", expected \"%v\"", has, set.has)
@@ -162,37 +155,59 @@ func TestHas(t *testing.T) {
 func TestParameters(t *testing.T) {
 	var data = []struct {
 		command    string
-		parameters []Parameter
+		parameters []string
 	}{
-		{"command <lorem>", []Parameter{NewParameterWithType("lorem", "string")}},
-		{"cmd <lorem:string>", []Parameter{NewParameterWithType("lorem", "string")}},
-		{"command <lorem:integer>", []Parameter{NewParameterWithType("lorem", "integer")}},
-		{"example <lorem> <ipsum> <dolor>", []Parameter{NewParameterWithType("lorem", "string"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "string")}},
-		{"command <lorem> <ipsum> <dolor:string>", []Parameter{NewParameterWithType("lorem", "string"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "string")}},
-		{"command <lorem> <ipsum:string> <dolor>", []Parameter{NewParameterWithType("lorem", "string"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "string")}},
-		{"command <lorem:string> <ipsum> <dolor>", []Parameter{NewParameterWithType("lorem", "string"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "string")}},
-		{"command <lorem:string> <ipsum> <dolor:string>", []Parameter{NewParameterWithType("lorem", "string"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "string")}},
-		{"command <lorem:string> <ipsum> <dolor:integer>", []Parameter{NewParameterWithType("lorem", "string"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "integer")}},
-		{"command <lorem:integer> <ipsum:string> <dolor:integer>", []Parameter{NewParameterWithType("lorem", "integer"), NewParameterWithType("ipsum", "string"), NewParameterWithType("dolor", "integer")}},
+		{"command <lorem>", []string{"lorem"}},
+		{"cmd <lorem:string>", []string{"lorem"}},
+		{"command <lorem:integer>", []string{"lorem"}},
+		{"example <lorem> <ipsum> <dolor>", []string{"lorem", "ipsum", "dolor"}},
+		{"command <lorem> <ipsum> <dolor:string>", []string{"lorem", "ipsum", "dolor"}},
+		{"command <lorem> <ipsum:string> <dolor>", []string{"lorem", "ipsum", "dolor"}},
+		{"command <lorem:string> <ipsum> <dolor>", []string{"lorem", "ipsum", "dolor"}},
+		{"command <lorem:string> <ipsum> <dolor:string>", []string{"lorem", "ipsum", "dolor"}},
+		{"command <lorem:string> <ipsum> <dolor:integer>", []string{"lorem", "ipsum", "dolor"}},
+		{"command <lorem:integer> <ipsum:string> <dolor:integer>", []string{"lorem", "ipsum", "dolor"}},
 	}
 
 	var cmd Command
+	var err error
 	for _, set := range data {
-		cmd = New(set.command)
+		cmd, err = New(set.command, nil)
+		checkErr(err, t)
 
 		if cmd.Text() != set.command {
 			t.Errorf("cmd.Text() must be \"%s\", but is \"%s\"", set.command, cmd.Text())
 		}
 
 		for _, param := range set.parameters {
-			has, err := cmd.Has(param)
-			if err != nil {
-				t.Error(err)
-			}
-
-			if !has {
+			if !cmd.Has(param) {
 				t.Errorf("\"%s\" missing parameter.Item \"%+v\"", cmd.Text(), param)
 			}
+		}
+	}
+}
+
+func TestCustomTypes(t *testing.T) {
+	var data = []struct {
+		command string
+		request string
+		matches bool
+		types Types
+	}{
+		{"command", "example", false, map[string]string{"string":  "[^\\s]+", "integer": "[0-9]+"}},
+		{"command", "command", true, map[string]string{"string":  "[^\\s]+", "integer": "[0-9]+"}},
+		{"command <custom:type>", "command 123", true, map[string]string{"string":  "[^\\s]+", "type": "[0-9]+"}},
+		{"command <rest:rest>", "command something else", true, map[string]string{"string":  "[^\\s]+", "rest": ".*"}},
+	}
+
+	for _, set := range data {
+		cmd, err := New(set.command, set.types)
+		checkErr(err, t)
+
+		matches := cmd.Matches(set.request)
+
+		if matches != set.matches {
+			t.Errorf("Matches() returns unexpected values. Got \"%v\", expected \"%v\"\nExpression: \"%s\" not matching \"%s\"", matches, set.matches, cmd.Expression().String(), set.request)
 		}
 	}
 }
